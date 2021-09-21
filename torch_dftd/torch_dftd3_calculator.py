@@ -1,3 +1,4 @@
+from time import perf_counter
 from typing import Dict, Optional, Tuple
 
 import torch
@@ -151,9 +152,15 @@ class TorchDFTD3Calculator(Calculator):
 
     def batch_calculate(self, atoms_list=None, properties=["energy"], system_changes=all_changes):
         # Calculator.calculate(self, atoms, properties, system_changes)
+        torch.cuda.synchronize()
+        t0 = perf_counter()
+
         input_dicts_list = [self._preprocess_atoms(atoms) for atoms in atoms_list]
         # --- Make batch ---
         # pos=pos, Z=Z, cell=cell, pbc=pbc, edge_index=edge_index, shift=S
+        torch.cuda.synchronize()
+        t1 = perf_counter()
+
         n_nodes_list = [d["Z"].shape[0] for d in input_dicts_list]
         shift_index_array = torch.cumsum(torch.tensor([0] + n_nodes_list), dim=0)
         cell_batch = torch.stack(
@@ -193,10 +200,21 @@ class TorchDFTD3Calculator(Calculator):
             dim=0,
         )
 
+        torch.cuda.synchronize()
+        t2 = perf_counter()
+
         if "forces" in properties or "stress" in properties:
             results_list = self.dftd_module.calc_energy_and_forces(
                 **batch_dicts, damping=self.damping
             )
         else:
             results_list = self.dftd_module.calc_energy(**batch_dicts, damping=self.damping)
+
+        torch.cuda.synchronize()
+        t3 = perf_counter()
+
+        print("t1-t0", t1 - t0)
+        print("t2-t1", t2 - t1)
+        print("t3-t2", t3 - t2)
+
         return results_list
